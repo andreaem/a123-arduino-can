@@ -9,9 +9,23 @@
 
 // Install the can bus seeed shield software on arduino library
 
-// TODO the balancing commands don't work, or it's not clear if it's working
+// TODO 
+// the balancing commands don't work, or it's not clear if it's working
 // Doesn't show cell level BMS reads, always returning only frame 2
 // This might be related to the wrong command going out for detailed response.
+
+/*
+ * TO SET BEFORE USE
+ * 
+ * For when it's running 
+ * DONT_FILTER_BMS_ID false 
+ * WATCHCHARGE true
+ * 
+ * ADD A l low voltage cutoff
+ * 
+ * Cofirm pin is right for sparkfun or Seeed BMS
+ * 
+ */
 
 
 unsigned char Flag_Recv = 0;
@@ -33,16 +47,46 @@ unsigned char balance_e[8] = {0x01, 0x8F, 0xC0, 0, 0, 0, 0, 0};
 unsigned char empty_message[8];
 
 
+
 MCP_CAN CAN(9); // Set CS to pin 10 for Sparkfun, pin 9 for Seeed
 
+#define DONT_FILTER_BMS_ID true //show all IDs even odd ones
 
+#define WATCHCHARGE false //Poll batteries every 10 seconds to check charge & turn off cell balancing
 //Run main power and enable charging on same realy? nneds 12v not gate
 #define MAIN_POWER 4 //Main Drive Relay, high on, low off
 #define ENABLE_CHARGING 5 //BMS cutoff for charing, high on, low off
 #define CHARGING 6 //???? maybe show if charge is coming in?
 #define OVER_VOLTAGE_ALARM 7 //A battery is above OVER_VOLTAGE_ALARM_LEVEL
 
-#define OVER_VOLTAGE_ALARM_LEVEL 3.57 //volts to trigger an over voltage alarm event
+#define OVER_VOLTAGE_ALARM_LEVEL 3.7 //volts to trigger an over voltage alarm event and cut power, should be 3.6 really
+
+//charge to 0.1 C (suggestion from the RC car charging manual)
+//Absolute Maximum terminal voltage 4.0 Above which will cause immediate damage to the cell
+//Recommended maximum charge voltage 3.6V
+//Recommended float charge voltage 3.5V
+
+
+//Recommended standard charge current 20A to 3.5V
+
+//Teslorian voltages to implement...
+// Cell Voltage warning levels, unit 1/100th Volt
+#define CELL_LOW_LOW_VOLTAGE 250
+#define CELL_LOW_VOLTAGE 260
+#define CELL_HIGH_VOLTAGE 350 
+#define CELL_HIGH_HIGH_VOLTAGE 360
+
+// Pack Voltage warning levels, unit volts (28 S 4ish P?)
+#define PACK_LOW_LOW_VOLTAGE 70
+#define PACK_LOW_VOLTAGE 73
+#define PACK_HIGH_VOLTAGE  98
+#define PACK_HIGH_HIGH_VOLTAGE 101
+
+// Battery warning temps
+#define PACK_LOW_LOW_TEMP 40
+#define PACK_LOW_TEMP 60
+#define PACK_HIGH_TEMP 80
+#define PACK_HIGH_HIGH_TEMP 100
 
 void setup() {
 
@@ -253,13 +297,14 @@ void loop() {
     //201,202,203,204,205,206,207
 
     //Poll every 10 seconds to see if high volatge state
-    if (millis() >= CurrentTime) {
-      CurrentTime = millis() + 10000; //wait 10 seconds
-      //this should only be polling values, not setting balance!
-      CAN.sendMsgBuf(BCM_CMD_ID, 0, 3, no_balance_e);
-      Serial.println("Sending Do Not Balance Message, Reqeusting Extended Response");
+    if (WATCHCHARGE) {
+      if (millis() >= CurrentTime) {
+        CurrentTime = millis() + 10000; //wait 10 seconds
+        //this should only be polling values, not setting balance!
+        CAN.sendMsgBuf(BCM_CMD_ID, 0, 3, no_balance_e);
+        Serial.println("Sending Do Not Balance Message, Reqeusting Extended Response");
+      }
     }
-
   
     if (Serial.available()) {
         char key1 = Serial.read();
@@ -314,7 +359,7 @@ void loop() {
 
             String id_string = String(id[i],HEX);
             int id_int = id_string.toInt();
-            if (id_int >= 201 && id_int <= 208) {
+            if (id_int >= 200 && id_int <= 208 || DONT_FILTER_BMS_ID) {
 
                 safetyShutoff(buf + 8 * i); //check if over voltage event
     
@@ -352,7 +397,6 @@ void loop() {
                 Serial.print ("IGNORING BUFFER: ");
                 Serial.println(id[i], HEX);
                 Serial.println("-----------------------------------------------");
-
             }
 
         }
