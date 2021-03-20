@@ -44,15 +44,18 @@ unsigned char balance[8] = {0, 0x8F, 0xC0, 0, 0, 0, 0, 0};
 unsigned char balance_32[8] = {0, 0x89, 0x80, 0, 0, 0, 0, 0};
 unsigned char balance_328[8] = {0, 0x8E, 0x80, 0, 0, 0, 0, 0};
 unsigned char balance_e[8] = {0x01, 0x8F, 0xC0, 0, 0, 0, 0, 0};
-unsigned char empty_message[8];
+unsigned char empty_message[8] = {0x01, 0, 0, 0, 0, 0, 0, 0};
+
+
+int hexCounter = 0x1709;
 
 
 
 MCP_CAN CAN(9); // Set CS to pin 10 for Sparkfun, pin 9 for Seeed
 
-#define DONT_FILTER_BMS_ID true //show all IDs even odd ones
+#define DONT_FILTER_BMS_ID false //show all IDs even odd ones, turn off for charing
 
-#define WATCHCHARGE false //Poll batteries every 10 seconds to check charge & turn off cell balancing
+#define WATCHCHARGE true //Poll batteries every 10 seconds to check charge & turn off cell balancing
 //Run main power and enable charging on same realy? nneds 12v not gate
 #define MAIN_POWER 4 //Main Drive Relay, high on, low off
 #define ENABLE_CHARGING 5 //BMS cutoff for charing, high on, low off
@@ -115,6 +118,8 @@ void setup() {
     }
 
     Serial.println("CAN BUS Shield init ok!");
+    Serial.println("A123 CAN V0.9");
+
 
     attachInterrupt(0, MCP2515_ISR, FALLING); // start interrupt
 }
@@ -226,6 +231,19 @@ void disableMotorController(){
 
 
 void print200Message(unsigned char *buf) {
+
+    Serial.println ("------------------------------------------------");
+    
+    Serial.println ("What is bit 16 to 23");
+    Serial.println (getBits(16,8,buf));
+    Serial.println ("What is bit 40 to 42?");
+    Serial.println (getBits(40,3,buf));
+
+    Serial.println ("What is bit 56 to 58?");
+    Serial.println (getBits(56,3,buf));
+
+    Serial.println ("What is bit 72 to end?");
+    Serial.println (getBits(72,20,buf));
     
     unsigned char mod_cell_undervolt = getBits(3, 1, buf);
     unsigned char mod_cell_overvolt = getBits(2, 1, buf);
@@ -266,6 +284,9 @@ void print200Message(unsigned char *buf) {
 
     Serial.print("Voltage Mismatch Detected: ");
     Serial.println(mod_v_compare_oor);
+
+    Serial.println ("------------------------------------------------");
+
 }
 
 void printExtendedMessage(unsigned char offset, unsigned char *buf) {
@@ -286,15 +307,21 @@ void printExtendedMessage(unsigned char offset, unsigned char *buf) {
 }
 
 
-
+bool continueLoop = true;
 
 unsigned long CurrentTime = millis();
 
+
+unsigned char id_val = 0x61;
+
+
 void loop() {
+
+    while (continueLoop) {
 
     //Each battery has 2 BMS, the car shipped with 4 Modules hence 8 BMS'
     //Relly only want ID 206 and 207 for this cellI believe the car in total has:
-    //201,202,203,204,205,206,207
+    //200,201,202,203,204,205,206,207
 
     //Poll every 10 seconds to see if high volatge state
     if (WATCHCHARGE) {
@@ -331,8 +358,80 @@ void loop() {
                 Serial.println("Sending Do Not Balance Message");
                 break;
             case 101: //e
-                CAN.sendMsgBuf(BCM_CMD_ID, 0, 3, no_balance_e);
-                Serial.println("Sending Do Not Balance Message, Reqeusting Extended Response");
+
+unsigned char testmessage[8] = {0x01, 0xFF, 0XF0, 0, 0, 0, 0, 0};
+//testmessage[0] = id_val;
+//unsigned char no_balance_e[8] = {0x01, 0xFF, 0XF0, 0, 0, 0, 0, 0};
+
+                Serial.println("Sending EMPTY MESSAGE2, Reqeusting Extended Response");
+                
+                CAN.sendMsgBuf(0xF10, 0, 3, testmessage);
+                //CAN.sendMsgBuf(0xF10, 0, 3, balance_e);
+                //CAN.sendMsgBuf(0x707, CAN_STDID, 3, empty_message);
+                //no_balance_e
+
+
+//    Serial.println (hexCounter);                
+//    hexCounter += 1;
+//    delay (100);
+
+    
+    
+/*
+80 & 
+there was one around here:
+1799
+0x707
+ID: 70F
+
+2047
+
+
+7FF largest:
+
+
+3847
+0xF07
+ID: 70F
+
+3856
+ID : 718
+0xF10
+
+4176
+0x1051
+id:
+286
+287
+206
+
+5896
+0x1708
+ID:70F
+
+5904
+id718
+
+*/
+
+    
+    
+    
+    /*
+    CAN.sendMsgBuf(0x20, 0, 3, empty_message);
+    CAN.sendMsgBuf(0x30, 0, 3, empty_message);
+    CAN.sendMsgBuf(0x40, 0, 3, empty_message);
+    CAN.sendMsgBuf(0x28, 0, 3, empty_message);
+    CAN.sendMsgBuf(0x32, 0, 3, empty_message);
+    CAN.sendMsgBuf(0xA, 0, 3, empty_message);
+    */
+
+
+
+
+                
+                //CAN.sendMsgBuf(BCM_CMD_ID, 0, 3, no_balance_e);
+                //Serial.println("Sending Do Not Balance Message, Reqeusting Extended Response");
                 break;
             default:
                 Serial.println("Error: Command not defined");
@@ -351,7 +450,6 @@ void loop() {
             buffersUsed += 1;
             if (buffersUsed > 7) {
                 Serial.print("Error");
-                break;
             }
         }
     } else {
@@ -362,9 +460,7 @@ void loop() {
             if (id_int >= 200 && id_int <= 208 || DONT_FILTER_BMS_ID) {
 
                 safetyShutoff(buf + 8 * i); //check if over voltage event
-    
-    
-    
+        
                 Serial.print("Buffers Used: ");
                 Serial.println(buffersUsed);
                 Serial.print("Message: ");
@@ -375,22 +471,30 @@ void loop() {
                 Serial.println(len[i]);
                 unsigned char id_mod = id[i] >> 8;
                 //Why is the id_mod never coming up w/ detailed view?    
-                //Serial.print ("id_mod: ");
-                //Serial.println(id_mod);
+                Serial.print ("id_mod: ");
+                Serial.println(id_mod);
                
     
                 if (id_mod == 0x2) {
+
+
+//                    Serial.print("; Data: ");
+//                    for (int j = 0; j<len[i]; j++) {
+//                        Serial.print(buf[j + (8 * i)], HEX);Serial.print("\t");
+//                    }
+
+                  
                     Serial.println();
                     print200Message(buf + 8 * i);
                 } else if (id_mod == 0x3 || id_mod == 0x4 || id_mod == 0x5 || id_mod == 0x6) {
                     Serial.println();
                     printExtendedMessage((id_mod - 3) * 4, buf + 8 * i);
-                } else {
+                }// else {
                     Serial.print("; Data: ");
                     for (int j = 0; j<len[i]; j++) {
                         Serial.print(buf[j + (8 * i)], HEX);Serial.print("\t");
                     }
-                }
+                //}
                 Serial.println();
             } else {
                 Serial.println("--------------------BUFFER USED----------------");
@@ -402,5 +506,6 @@ void loop() {
         }
         buffersUsed = 0;
         unwritten_data = 0;
+    }
     }
 }
